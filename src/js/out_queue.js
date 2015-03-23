@@ -180,12 +180,6 @@
 				xhr.open('POST', configCollectorUrl, true);
 				xhr.withCredentials = true;
 
-				// Time out POST requests after 5 seconds
-				var xhrTimeout = setTimeout(function () {
-					xhr.abort();
-					executingQueue = false;
-				}, 5000);
-
 				// Keep track of number of events to delete from queue
 				var eventCount = outQueue.length;
 
@@ -197,10 +191,8 @@
 						if (localStorageAccessible() && useLocalStorage) {
 							localStorage.setItem(queueName, json2.stringify(outQueue));
 						}
-						clearTimeout(xhrTimeout);
 						executeQueue();
 					} else if (xhr.readyState === 4 && xhr.status >= 400) {
-						clearTimeout(xhrTimeout);
 						executingQueue = false;
 					}
 				};
