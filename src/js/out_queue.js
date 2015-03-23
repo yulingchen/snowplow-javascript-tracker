@@ -38,6 +38,7 @@
 		json2 = require('JSON'),
 		lodash = require('./lib_managed/lodash'),
 		localStorageAccessible = require('./lib/detectors').localStorageAccessible,
+		lock = require('./lock').lock,
 		object = typeof exports !== 'undefined' ? exports : this; // For eventual node.js environment support
 
 	/**
@@ -56,7 +57,7 @@
 	 */
 	object.OutQueueManager = function (functionName, namespace, mutSnowplowState, useLocalStorage, usePost, bufferSize) {
 		var	queueName,
-			executingQueue = false,
+			queueLock,
 			configCollectorUrl,
 			outQueue;
 
@@ -70,12 +71,15 @@
 		// Different queue names for GET and POST since they are stored differently
 		queueName = ['snowplowOutQueue', functionName, namespace, usePost ? 'post' : 'get'].join('_');
 
-		if (localStorageAccessible() && useLocalStorage) {
+		queueLock = lock(queueName + '_lock');
+
+		if (localStorageAccessible() && useLocalStorage && queueLock.attemptAcquire()) {
 			// Catch any JSON parse errors that might be thrown
 			try {
 				outQueue = json2.parse(localStorage.getItem(queueName));
 			}
 			catch(e) {}
+			queueLock.release();
 		}
 
 		// Initialize to and empty array if we didn't get anything out of localStorage
@@ -86,13 +90,16 @@
 		// Used by pageUnloadGuard
 		mutSnowplowState.outQueues.push(outQueue);
 
-		if (usePost && bufferSize > 1) {
-			mutSnowplowState.bufferFlushers.push(function () {
-				if (!executingQueue) {
-					executeQueue();
-				}
-			});
-		}
+		mutSnowplowState.bufferFlushers.push(function () {
+
+			// Remove unsent batched events
+			if (usePost && bufferSize > 1 && queueLock.attemptAcquire()) {
+				executeQueue();
+			}
+
+			// Delete the localStorage lock before unloading
+			queueLock.releaseLocalStorage();
+		});
 
 		/*
 		 * Convert a dictionary to a querystring
@@ -140,11 +147,13 @@
 
 			outQueue.push(usePost ? getBody(request) : getQuerystring(request));
 			configCollectorUrl = url + path;
-			if (localStorageAccessible() && useLocalStorage) {
+
+			if (localStorageAccessible() && useLocalStorage && queueLock.attemptAcquire()) {
 				localStorage.setItem(queueName, json2.stringify(outQueue));
+				queueLock.release();
 			}
 
-			if (!executingQueue && outQueue.length >= bufferSize) {
+			if (outQueue.length >= bufferSize && queueLock.attemptAcquire()) {
 				executeQueue();
 			}
 		}
@@ -161,7 +170,7 @@
 			}
 
 			if (outQueue.length < 1) {
-				executingQueue = false;
+				queueLock.release();
 				return;
 			}
 
@@ -169,8 +178,6 @@
 			if (!lodash.isString(configCollectorUrl)) {
 				throw "No Snowplow collector configured, cannot track";
 			}
-
-			executingQueue = true;
 
 			var nextRequest = outQueue[0];
 
@@ -193,7 +200,7 @@
 						}
 						executeQueue();
 					} else if (xhr.readyState === 4 && xhr.status >= 400) {
-						executingQueue = false;
+						queueLock.release();
 					}
 				};
 
@@ -219,7 +226,7 @@
 				};
 
 				image.onerror = function () {
-					executingQueue = false;
+					queueLock.release();
 				};
 
 				image.src = configCollectorUrl + nextRequest;
