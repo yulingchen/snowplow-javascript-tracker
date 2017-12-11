@@ -2360,6 +2360,26 @@
 				});
 			},
 
+
+            /**
+             * Track an identify alias event
+             *
+             * @param string alias Required.
+             * @param array context Optional. Context relating to the event.
+             * @param tstamp Optional number or Timestamp object
+             */
+            trackUserAlias: function (alias, context, tstamp) {
+                trackCallback(function () {
+                    core.trackSelfDescribingEvent({
+                        schema: 'com.snowplowanalytics.snowplow/user_alias/jsonschema/1-0-0',
+                        data: {
+                            userId: businessUserId,
+                            alias: alias
+                        }
+                    }, addCommonContexts(context), tstamp)
+                });
+            },
+
 			/**
 			 * Track a GA Enhanced Ecommerce Action with all stored
 			 * Enhanced Ecommerce contexts
