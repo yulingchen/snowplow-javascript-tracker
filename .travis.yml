@@ -13,13 +13,7 @@ install:
 
 - npm install ./core --save # Must be cleaned from package.json before deploy
 - npm install --dev
-- wget https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip
-- unzip ./ngrok-stable-linux-amd64.zip
-before_script:
-- export SUBDOMAIN=$RANDOM$RANDOM
-- ./ngrok http -authtoken $NGROK_AUTH -subdomain $SUBDOMAIN -log=stdout 8500 > /dev/null &
 script:
-- cd core && grunt intern && cd ..
 - grunt travis
 deploy:
 - provider: script
